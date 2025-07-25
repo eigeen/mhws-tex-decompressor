@@ -1,5 +1,4 @@
 use std::{
-    fs::{self, OpenOptions},
     io::{self, Write},
     path::Path,
     sync::{
@@ -9,9 +8,12 @@ use std::{
     time::Duration,
 };
 
+use fs_err as fs;
+
 use color_eyre::eyre::bail;
 use colored::Colorize;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
+use fs::OpenOptions;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use parking_lot::Mutex;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -177,8 +179,7 @@ fn main_entry() -> color_eyre::Result<()> {
         );
     }
 
-    let pak_writer = Arc::try_unwrap(pak_writer_mtx);
-    match pak_writer {
+    match Arc::try_unwrap(pak_writer_mtx) {
         Ok(pak_writer) => pak_writer.into_inner().finish()?,
         Err(_) => panic!("Arc::try_unwrap failed"),
     };
@@ -187,7 +188,7 @@ fn main_entry() -> color_eyre::Result<()> {
     println!("{}", "Done!".cyan().bold());
     if !use_full_package_mode {
         println!(
-            "You should rename the output file like `re_chunk_000.pak.sub_000.pak.patch_xxx.pak`, or manage it by your favorite mod manager."
+            "You should rename the output file like `re_chunk_000.pak.sub_000.pak.patch_xxx.pak`."
         );
     }
 
