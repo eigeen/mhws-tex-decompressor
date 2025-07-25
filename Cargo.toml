@@ -12,7 +12,7 @@ ree-pak-core = { path = "../../ree-pak-rs/ree-pak-core" }
 # ree-pak-core = { git = "https://github.com/eigeen/ree-pak-rs.git", branch = "main" }
 
 dialoguer = "0.11"
-eyre = "0.6"
+color-eyre = "0.6.5"
 indicatif = "0.17"
 rayon = "1.10"
 parking_lot = "0.12"

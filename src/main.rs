@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 
+use color_eyre::eyre::bail;
 use colored::Colorize;
 use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
@@ -30,7 +31,7 @@ fn main() {
     println!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
 
     if let Err(e) = main_entry() {
-        eprintln!("{}: {}", "Error".red().bold(), e);
+        eprintln!("{}: {:#}", "Error".red().bold(), e);
         wait_for_exit();
         std::process::exit(1);
     }
@@ -43,7 +44,7 @@ fn panic_hook(info: &std::panic::PanicHookInfo) {
     std::process::exit(1);
 }
 
-fn main_entry() -> eyre::Result<()> {
+fn main_entry() -> color_eyre::Result<()> {
     let input: String = Input::with_theme(&ColorfulTheme::default())
         .show_default(true)
         .default("re_chunk_000.pak.sub_000.pak".to_string())
@@ -55,7 +56,7 @@ fn main_entry() -> eyre::Result<()> {
 
     let input_path = Path::new(&input);
     if !input_path.is_file() {
-        eyre::bail!("input file not exists.");
+        bail!("input file not exists.");
     }
 
     const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
@@ -121,7 +122,7 @@ fn main_entry() -> eyre::Result<()> {
     let bytes_written = AtomicUsize::new(0);
     let err = entries
         .par_iter()
-        .try_for_each(move |&entry| -> eyre::Result<()> {
+        .try_for_each(move |&entry| -> color_eyre::Result<()> {
             let pak_writer_mtx = &pak_writer_mtx1;
             let bar = &bar1;
             // read raw tex file
@@ -206,7 +207,7 @@ fn write_to_pak<W>(
     file_name: impl FileNameExt,
     data: &[u8],
     use_feature_clone: bool,
-) -> eyre::Result<usize>
+) -> color_eyre::Result<usize>
 where
     W: io::Write + io::Seek,
 {
