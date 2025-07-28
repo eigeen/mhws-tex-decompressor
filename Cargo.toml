@@ -4,19 +4,21 @@ version = "0.2.0"
 edition = "2024"
 
 [dependencies]
-# local development
-re-tex = { path = "../re-tex" }
-ree-pak-core = { path = "../../ree-pak-rs/ree-pak-core" }
+# # local development
+# re-tex = { path = "../re-tex" }
+# ree-pak-core = { path = "../../ree-pak-rs/ree-pak-core" }
 
-# re-tex = { git = "https://github.com/eigeen/re-tex.git", branch = "main" }
-# ree-pak-core = { git = "https://github.com/eigeen/ree-pak-rs.git", branch = "main" }
+re-tex = { git = "https://github.com/eigeen/re-tex.git", branch = "main" }
+ree-pak-core = { git = "https://github.com/eigeen/ree-pak-rs.git", branch = "main" }
 
+# UI
 dialoguer = "0.11"
-color-eyre = "0.6.5"
 indicatif = "0.18"
+
+color-eyre = "0.6"
 rayon = "1.10"
 parking_lot = "0.12"
 colored = "3.0"
-fs-err = "3.1.1"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.141"
+fs-err = "3.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

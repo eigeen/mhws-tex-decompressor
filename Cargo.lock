@@ -1114,6 +1114,7 @@ dependencies = [
 [[package]]
 name = "re-tex"
 version = "0.2.0"
+source = "git+https://github.com/eigeen/re-tex.git?branch=main#64f85bc4c68dd064747ae2ca6fd9112133a0c774"
 dependencies = [
  "better_default",
  "byteorder",
@@ -1138,6 +1139,7 @@ dependencies = [
 [[package]]
 name = "ree-pak-core"
 version = "0.4.1"
+source = "git+https://github.com/eigeen/ree-pak-rs.git?branch=main#bf38404e0c3c1777a9bc351087264d7bea7ae1f8"
 dependencies = [
  "bitflags 2.9.1",
  "byteorder",
