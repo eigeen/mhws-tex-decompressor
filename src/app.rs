@@ -305,14 +305,7 @@ I'm sure I've checked the list, press Enter to continue"#,
             let chunk_path = game_dir.join(chunk_name.to_string());
             let output_path = if use_replace_mode {
                 // In replace mode, first generate a temporary decompressed file
-                let temp_path = chunk_path.with_extension("pak.temp");
-                // Backup the original file
-                let backup_path = chunk_path.with_extension("pak.backup");
-                if backup_path.exists() {
-                    fs::remove_file(&backup_path)?;
-                }
-                fs::rename(&chunk_path, &backup_path)?;
-                temp_path
+                chunk_path.with_extension("pak.temp")
             } else {
                 // In patch mode
                 // Find the max patch id for the current chunk series
@@ -348,8 +341,16 @@ I'm sure I've checked the list, press Enter to continue"#,
                 true,
             )?;
 
-            // In replace mode, rename the temporary file to the original file name
+            // In replace mode, backup the original file
+            // and rename the temporary file to the original file name
             if use_replace_mode {
+                // Backup the original file
+                let backup_path = chunk_path.with_extension("pak.backup");
+                if backup_path.exists() {
+                    fs::remove_file(&backup_path)?;
+                }
+                fs::rename(&chunk_path, &backup_path)?;
+                // Rename the temporary file to the original file name
                 fs::rename(&output_path, &chunk_path)?;
             }
             println!();
