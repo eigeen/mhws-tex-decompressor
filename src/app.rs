@@ -550,6 +550,8 @@ I'm sure I've checked the list, press Enter to continue"#,
                 } else {
                     // no higher patches exist, safe to delete
                     fs::remove_file(file_path)?;
+                    // remove from all_chunks
+                    all_chunks.retain(|c| c != chunk_name);
                     println!("   Removed patch file");
                 }
             }
