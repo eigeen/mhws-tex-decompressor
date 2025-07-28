@@ -89,7 +89,6 @@ impl App {
         let file = fs::File::open(input_path)?;
         let mut reader = io::BufReader::new(file);
 
-        println!("Reading pak archive...");
         let pak_archive = ree_pak_core::read::read_archive(&mut reader)?;
         let archive_reader = PakArchiveReader::new(reader, &pak_archive);
         let archive_reader_mtx = Mutex::new(archive_reader);
@@ -102,7 +101,7 @@ impl App {
             pak_archive
                 .entries()
                 .iter()
-                .filter(|entry| is_tex_file(entry.hash(), &filename_table))
+                .filter(|entry| is_tex_file(entry.hash(), filename_table))
                 .collect::<Vec<_>>()
         };
 
@@ -137,7 +136,7 @@ impl App {
                     archive_reader.owned_entry_reader(entry.clone())?
                 };
 
-                if !is_tex_file(entry.hash(), &filename_table) {
+                if !is_tex_file(entry.hash(), filename_table) {
                     // plain file, just copy
                     let mut buf = vec![];
                     std::io::copy(&mut entry_reader, &mut buf)?;
@@ -305,9 +304,9 @@ I'm sure I've checked the list, press Enter to continue"#,
         for chunk_name in selected_chunks {
             let chunk_path = game_dir.join(chunk_name.to_string());
             let output_path = if use_replace_mode {
-                // 如果是替换模式，首先生成一个临时的解压后文件
+                // In replace mode, first generate a temporary decompressed file
                 let temp_path = chunk_path.with_extension("pak.temp");
-                // 备份原始文件
+                // Backup the original file
                 let backup_path = chunk_path.with_extension("pak.backup");
                 if backup_path.exists() {
                     fs::remove_file(&backup_path)?;
@@ -315,8 +314,8 @@ I'm sure I've checked the list, press Enter to continue"#,
                 fs::rename(&chunk_path, &backup_path)?;
                 temp_path
             } else {
-                // 如果是补丁模式
-                // 查找当前chunk系列的最大patch id
+                // In patch mode
+                // Find the max patch id for the current chunk series
                 let max_patch_id = all_chunks
                     .iter()
                     .filter(|c| {
@@ -330,11 +329,11 @@ I'm sure I've checked the list, press Enter to continue"#,
 
                 let new_patch_id = max_patch_id + 1;
 
-                // 创建新的chunk name
+                // Create a new chunk name
                 let mut output_chunk_name = chunk_name.clone();
                 output_chunk_name.sub_patch_id = Some(new_patch_id);
 
-                // 在chunk列表中添加新的补丁，以便后续处理可以找到它
+                // Add the new patch to the chunk list so it can be found in subsequent processing
                 all_chunks.push(output_chunk_name.clone());
 
                 game_dir.join(output_chunk_name.to_string())
@@ -349,7 +348,7 @@ I'm sure I've checked the list, press Enter to continue"#,
                 true,
             )?;
 
-            // 如果是替换模式，将临时文件重命名为原始文件名
+            // In replace mode, rename the temporary file to the original file name
             if use_replace_mode {
                 fs::rename(&output_path, &chunk_path)?;
             }
