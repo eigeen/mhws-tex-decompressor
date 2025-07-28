@@ -1,5 +1,6 @@
 mod app;
 mod chunk;
+mod metadata;
 mod util;
 
 use colored::Colorize;

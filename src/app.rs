@@ -24,7 +24,7 @@ use ree_pak_core::{
     write::FileOptions,
 };
 
-use crate::{chunk::ChunkName, util::human_bytes};
+use crate::{chunk::ChunkName, metadata::PakMetadata, util::human_bytes};
 
 const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
 const AUTO_CHUNK_SELECTION_SIZE_THRESHOLD: usize = 50 * 1024 * 1024; // 50MB
@@ -111,7 +111,15 @@ impl App {
             .truncate(true)
             .write(true)
             .open(output_path)?;
-        let pak_writer = ree_pak_core::write::PakWriter::new(out_file, entries.len() as u64);
+        let mut pak_writer = ree_pak_core::write::PakWriter::new(out_file, entries.len() as u64);
+
+        // write metadata
+        let metadata = PakMetadata {
+            version: 1,
+            is_uncompressed_patch: true,
+        };
+        metadata.write_to_pak(&mut pak_writer)?;
+
         let pak_writer_mtx = Arc::new(Mutex::new(pak_writer));
 
         let bar = ProgressBar::new(entries.len() as u64);
