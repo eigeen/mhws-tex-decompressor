@@ -2,8 +2,8 @@ use std::{
     io::{self, Write},
     path::Path,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -11,8 +11,7 @@ use std::{
 use fs_err as fs;
 
 use color_eyre::eyre::bail;
-use colored::Colorize;
-use dialoguer::{theme::ColorfulTheme, Input, Select};
+use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use fs::OpenOptions;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
 use parking_lot::Mutex;
@@ -25,30 +24,27 @@ use ree_pak_core::{
     write::FileOptions,
 };
 
-const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
+use crate::{chunk::ChunkName, util::human_bytes};
 
-#[derive(Debug, Clone)]
-pub struct Config {
-    pub input_path: Option<String>,
-    pub output_path: Option<String>,
-    pub use_full_package_mode: bool,
-    pub use_feature_clone: bool,
+const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
+const AUTO_CHUNK_SELECTION_SIZE_THRESHOLD: usize = 50 * 1024 * 1024; // 50MB
+const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
+
+struct ChunkSelection {
+    chunk_name: ChunkName,
+    file_size: u64,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            input_path: Default::default(),
-            output_path: Default::default(),
-            use_full_package_mode: false,
-            use_feature_clone: true,
-        }
+impl std::fmt::Display for ChunkSelection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.chunk_name, human_bytes(self.file_size))?;
+        Ok(())
     }
 }
 
 #[derive(Default)]
 pub struct App {
-    config: Config,
+    filename_table: Option<FileNameTable>,
 }
 
 impl App {
@@ -56,6 +52,10 @@ impl App {
         println!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
         println!("Get updates at https://github.com/eigeen/mhws-tex-decompressor");
         println!();
+
+        println!("Loading embedded file name table...");
+        let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
+        self.filename_table = Some(filename_table);
 
         // Mode selection
         let mode = Select::with_theme(&ColorfulTheme::default())
@@ -72,47 +72,19 @@ impl App {
         }
     }
 
-    fn auto_mode(&mut self) -> color_eyre::Result<()> {
-        todo!()
+    fn filename_table(&self) -> &FileNameTable {
+        self.filename_table.as_ref().unwrap()
     }
 
-    fn manual_mode(&mut self) -> color_eyre::Result<()> {
-        let input: String = Input::with_theme(&ColorfulTheme::default())
-            .show_default(true)
-            .default("re_chunk_000.pak.sub_000.pak".to_string())
-            .with_prompt("Input .pak file path")
-            .interact_text()
-            .unwrap()
-            .trim_matches(|c| c == '\"' || c == '\'')
-            .to_string();
-
-        let input_path = Path::new(&input);
-        if !input_path.is_file() {
-            bail!("input file not exists.");
-        }
-
-        const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
-
-        let use_full_package_mode = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt(
-                "Package all files, including non-tex files (for replacing original files)",
-            )
-            .default(0)
-            .items(&FALSE_TRUE_SELECTION)
-            .interact()
-            .unwrap();
-        let use_full_package_mode = use_full_package_mode == 1;
-
-        let use_feature_clone = Select::with_theme(&ColorfulTheme::default())
-            .with_prompt("Clone feature flags from original file?")
-            .default(1)
-            .items(&FALSE_TRUE_SELECTION)
-            .interact()
-            .unwrap();
-        let use_feature_clone = use_feature_clone == 1;
-
-        println!("Loading embedded file name table...");
-        let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
+    fn process_chunk(
+        &self,
+        filename_table: &FileNameTable,
+        input_path: &Path,
+        output_path: &Path,
+        use_full_package_mode: bool,
+        use_feature_clone: bool,
+    ) -> color_eyre::Result<()> {
+        println!("Processing chunk: {}", input_path.display());
 
         let file = fs::File::open(input_path)?;
         let mut reader = io::BufReader::new(file);
@@ -135,8 +107,6 @@ impl App {
         };
 
         // new pak archive
-        let output_path = input_path.with_extension("uncompressed.pak");
-        println!("Output file: {}", output_path.to_string_lossy());
         let out_file = OpenOptions::new()
             .create(true)
             .truncate(true)
@@ -218,12 +188,217 @@ impl App {
         };
 
         bar.finish();
-        println!("{}", "Done!".cyan().bold());
-        if !use_full_package_mode {
-            println!(
-                "You should rename the output file like `re_chunk_000.pak.sub_000.pak.patch_xxx.pak`."
-            );
+
+        Ok(())
+    }
+
+    fn auto_mode(&mut self) -> color_eyre::Result<()> {
+        let current_dir = std::env::current_dir()?;
+
+        wait_for_enter(
+            r#"Check list:
+
+1. Your game is already updated to the latest version.
+2. Uninstalled all the mods, or the generated files will break mods.
+
+I'm sure I've checked the list, press Enter to continue"#,
+        );
+
+        let game_dir: String = Input::<String>::with_theme(&ColorfulTheme::default())
+            .show_default(true)
+            .default(current_dir.to_string_lossy().to_string())
+            .with_prompt("Input MonsterHunterWilds directory path")
+            .interact_text()
+            .unwrap()
+            .trim_matches(|c| c == '\"' || c == '\'')
+            .to_string();
+
+        let game_dir = Path::new(&game_dir);
+        if !game_dir.is_dir() {
+            bail!("game directory not exists.");
         }
+
+        // scan for pak files
+        let dir = fs::read_dir(game_dir)?;
+        let mut all_chunks: Vec<ChunkName> = vec![];
+        for entry in dir {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            if !file_name.ends_with(".pak") || !file_name.starts_with("re_chunk_") {
+                continue;
+            }
+
+            let chunk_name = match ChunkName::try_from_str(&file_name) {
+                Ok(chunk_name) => chunk_name,
+                Err(e) => {
+                    println!("Invalid chunk name, skipped: {e}");
+                    continue;
+                }
+            };
+            all_chunks.push(chunk_name);
+        }
+        all_chunks.sort();
+
+        // show chunks for selection
+        // only show sub chunks
+        let chunk_selections = all_chunks
+            .iter()
+            .filter_map(|chunk| {
+                if chunk.sub_id.is_some() {
+                    Some(chunk.to_string())
+                } else {
+                    None
+                }
+            })
+            .map(|file_name| {
+                let file_path = game_dir.join(&file_name);
+                let file_size = fs::metadata(file_path)?.len();
+                Ok(ChunkSelection {
+                    chunk_name: ChunkName::try_from_str(&file_name)?,
+                    file_size,
+                })
+            })
+            .collect::<color_eyre::Result<Vec<_>>>()?;
+        if chunk_selections.is_empty() {
+            bail!("No available pak files found.");
+        }
+
+        let selected_chunks: Vec<bool> = chunk_selections
+            .iter()
+            .map(|chunk_selection| {
+                Ok(chunk_selection.file_size >= AUTO_CHUNK_SELECTION_SIZE_THRESHOLD as u64)
+            })
+            .collect::<color_eyre::Result<Vec<_>>>()?;
+
+        let selected_chunks: Option<Vec<usize>> =
+            MultiSelect::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select chunks to process (Space to select, Enter to confirm)")
+                .items(&chunk_selections)
+                .defaults(&selected_chunks)
+                .interact_opt()?;
+        let Some(selected_chunks) = selected_chunks else {
+            bail!("No chunks selected.");
+        };
+
+        let selected_chunks = selected_chunks
+            .iter()
+            .map(|i| chunk_selections[*i].chunk_name.clone())
+            .collect::<Vec<_>>();
+
+        // replace mode: replace original files with uncompressed files
+        // patch mode: generate patch files after original patch files
+        let use_replace_mode = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(
+                "Replace original files with uncompressed files? (Will automatically backup original files)",
+            )
+            .default(0)
+            .items(&FALSE_TRUE_SELECTION)
+            .interact()
+            .unwrap();
+        let use_replace_mode = use_replace_mode == 1;
+
+        // start processing
+        for chunk_name in selected_chunks {
+            let chunk_path = game_dir.join(chunk_name.to_string());
+            let output_path = if use_replace_mode {
+                // 如果是替换模式，首先生成一个临时的解压后文件
+                let temp_path = chunk_path.with_extension("pak.temp");
+                // 备份原始文件
+                let backup_path = chunk_path.with_extension("pak.backup");
+                if backup_path.exists() {
+                    fs::remove_file(&backup_path)?;
+                }
+                fs::rename(&chunk_path, &backup_path)?;
+                temp_path
+            } else {
+                // 如果是补丁模式
+                // 查找当前chunk系列的最大patch id
+                let max_patch_id = all_chunks
+                    .iter()
+                    .filter(|c| {
+                        c.major_id == chunk_name.major_id
+                            && c.patch_id == chunk_name.patch_id
+                            && c.sub_id == chunk_name.sub_id
+                    })
+                    .filter_map(|c| c.sub_patch_id)
+                    .max()
+                    .unwrap_or(0);
+
+                let new_patch_id = max_patch_id + 1;
+
+                // 创建新的chunk name
+                let mut output_chunk_name = chunk_name.clone();
+                output_chunk_name.sub_patch_id = Some(new_patch_id);
+
+                // 在chunk列表中添加新的补丁，以便后续处理可以找到它
+                all_chunks.push(output_chunk_name.clone());
+
+                game_dir.join(output_chunk_name.to_string())
+            };
+
+            println!("Output patch file: {}", output_path.display());
+            self.process_chunk(
+                self.filename_table(),
+                &chunk_path,
+                &output_path,
+                use_replace_mode,
+                true,
+            )?;
+
+            // 如果是替换模式，将临时文件重命名为原始文件名
+            if use_replace_mode {
+                fs::rename(&output_path, &chunk_path)?;
+            }
+            println!();
+        }
+
+        Ok(())
+    }
+
+    fn manual_mode(&mut self) -> color_eyre::Result<()> {
+        let input: String = Input::with_theme(&ColorfulTheme::default())
+            .show_default(true)
+            .default("re_chunk_000.pak.sub_000.pak".to_string())
+            .with_prompt("Input .pak file path")
+            .interact_text()
+            .unwrap()
+            .trim_matches(|c| c == '\"' || c == '\'')
+            .to_string();
+
+        let input_path = Path::new(&input);
+        if !input_path.is_file() {
+            bail!("input file not exists.");
+        }
+
+        let use_full_package_mode = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt(
+                "Package all files, including non-tex files (for replacing original files)",
+            )
+            .default(0)
+            .items(&FALSE_TRUE_SELECTION)
+            .interact()
+            .unwrap();
+        let use_full_package_mode = use_full_package_mode == 1;
+
+        let use_feature_clone = Select::with_theme(&ColorfulTheme::default())
+            .with_prompt("Clone feature flags from original file?")
+            .default(1)
+            .items(&FALSE_TRUE_SELECTION)
+            .interact()
+            .unwrap();
+        let use_feature_clone = use_feature_clone == 1;
+
+        self.process_chunk(
+            self.filename_table(),
+            input_path,
+            &input_path.with_extension("uncompressed.pak"),
+            use_full_package_mode,
+            use_feature_clone,
+        )?;
 
         Ok(())
     }
@@ -255,9 +430,9 @@ where
     Ok(data.len())
 }
 
-fn wait_for_exit() {
+fn wait_for_enter(msg: &str) {
     let _: String = Input::with_theme(&ColorfulTheme::default())
-        .with_prompt("Press Enter to exit")
+        .with_prompt(msg)
         .allow_empty(true)
         .interact_text()
         .unwrap();
