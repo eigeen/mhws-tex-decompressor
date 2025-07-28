@@ -14,11 +14,22 @@ const METADATA_KEY: &str = "__TEX_DECOMPRESSOR_METADATA__";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PakMetadata {
-    pub version: u32,
-    pub is_uncompressed_patch: bool,
+    version: u32,
+    is_full_package: bool,
 }
 
 impl PakMetadata {
+    pub fn new(is_full_package: bool) -> Self {
+        Self {
+            version: 1,
+            is_full_package,
+        }
+    }
+
+    pub fn is_full_package(&self) -> bool {
+        self.is_full_package
+    }
+
     pub fn from_pak_archive<R>(
         reader: R,
         pak_archive: &PakArchive,
