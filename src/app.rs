@@ -272,7 +272,7 @@ I'm sure I've checked the list, press Enter to continue"#,
         let chunk_selections = all_chunks
             .iter()
             .filter_map(|chunk| {
-                if chunk.sub_id.is_some() {
+                if chunk.sub_id().is_some() {
                     Some(chunk.to_string())
                 } else {
                     None
@@ -337,19 +337,18 @@ I'm sure I've checked the list, press Enter to continue"#,
                 let max_patch_id = all_chunks
                     .iter()
                     .filter(|c| {
-                        c.major_id == chunk_name.major_id
-                            && c.patch_id == chunk_name.patch_id
-                            && c.sub_id == chunk_name.sub_id
+                        c.major_id() == chunk_name.major_id()
+                            && c.patch_id() == chunk_name.patch_id()
+                            && c.sub_id() == chunk_name.sub_id()
                     })
-                    .filter_map(|c| c.sub_patch_id)
+                    .filter_map(|c| c.sub_patch_id())
                     .max()
                     .unwrap_or(0);
 
                 let new_patch_id = max_patch_id + 1;
 
                 // Create a new chunk name
-                let mut output_chunk_name = chunk_name.clone();
-                output_chunk_name.sub_patch_id = Some(new_patch_id);
+                let output_chunk_name = chunk_name.with_sub_patch(new_patch_id);
 
                 // Add the new patch to the chunk list so it can be found in subsequent processing
                 all_chunks.push(output_chunk_name.clone());
@@ -532,13 +531,13 @@ I'm sure I've checked the list, press Enter to continue"#,
 
                 // Check if there are any patches with higher numbers
                 let has_higher_patches = all_chunks.iter().any(|c| {
-                    c.major_id == chunk_name.major_id
-                        && c.sub_id == chunk_name.sub_id
-                        && match (c.sub_id, c.sub_patch_id) {
+                    c.major_id() == chunk_name.major_id()
+                        && c.sub_id() == chunk_name.sub_id()
+                        && match (c.sub_id(), c.sub_patch_id()) {
                             (Some(_), Some(patch_id)) => {
-                                patch_id > chunk_name.sub_patch_id.unwrap()
+                                patch_id > chunk_name.sub_patch_id().unwrap()
                             }
-                            (None, Some(patch_id)) => patch_id > chunk_name.patch_id.unwrap(),
+                            (None, Some(patch_id)) => patch_id > chunk_name.patch_id().unwrap(),
                             _ => false,
                         }
                 });
