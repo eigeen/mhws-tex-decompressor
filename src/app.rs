@@ -1,6 +1,6 @@
 use std::{
     io::{self, Write},
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -48,9 +48,11 @@ impl Mode {
     }
 }
 
+#[derive(Clone)]
 struct ChunkSelection {
     chunk_name: ChunkName,
     file_size: u64,
+    full_path: PathBuf,
 }
 
 impl std::fmt::Display for ChunkSelection {
@@ -68,7 +70,7 @@ pub struct App {
 impl App {
     pub fn run(&mut self) -> color_eyre::Result<()> {
         println!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
-        println!("Get updates at https://github.com/eigeen/mhws-tex-decompressor");
+        println!("Get updates from https://github.com/eigeen/mhws-tex-decompressor");
         println!();
 
         println!("Loading embedded file name table...");
@@ -92,6 +94,89 @@ impl App {
 
     fn filename_table(&self) -> &FileNameTable {
         self.filename_table.as_ref().unwrap()
+    }
+
+    /// Scan for all pak files in the game directory, including DLC directory
+    fn scan_all_pak_files(&self, game_dir: &Path) -> color_eyre::Result<Vec<ChunkSelection>> {
+        let mut main_chunks = Vec::new();
+        let mut dlc_chunks = Vec::new();
+
+        // Scan main game directory
+        self.scan_pak_files_in_dir(game_dir, &mut main_chunks)?;
+
+        // Scan DLC directory if it exists
+        let dlc_dir = game_dir.join("dlc");
+        if dlc_dir.is_dir() {
+            self.scan_pak_files_in_dir(&dlc_dir, &mut dlc_chunks)?;
+        }
+
+        // If both main and DLC have files, ask user which locations to process
+        let selected_locations = if !main_chunks.is_empty() && !dlc_chunks.is_empty() {
+            let locations = vec!["Main game directory", "DLC directory"];
+
+            MultiSelect::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select locations to process (Space to select, Enter to confirm)")
+                .items(&locations)
+                .defaults(&[true, true])
+                .interact()?
+        } else if !main_chunks.is_empty() {
+            vec![0]
+        } else if !dlc_chunks.is_empty() {
+            vec![1]
+        } else {
+            vec![]
+        };
+
+        let mut all_chunks = Vec::new();
+        for &location_idx in &selected_locations {
+            match location_idx {
+                0 => all_chunks.extend(main_chunks.iter().cloned()),
+                1 => all_chunks.extend(dlc_chunks.iter().cloned()),
+                _ => {}
+            }
+        }
+        all_chunks.sort_by(|a, b| a.chunk_name.cmp(&b.chunk_name));
+
+        Ok(all_chunks)
+    }
+
+    /// Scan pak files in a specific directory
+    fn scan_pak_files_in_dir(
+        &self,
+        dir: &Path,
+        all_chunks: &mut Vec<ChunkSelection>,
+    ) -> color_eyre::Result<()> {
+        let entries = fs::read_dir(dir)?;
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let file_path = entry.path();
+
+            if !file_name.ends_with(".pak") {
+                continue;
+            }
+
+            let chunk_name = match ChunkName::try_from_str(&file_name) {
+                Ok(chunk_name) => chunk_name,
+                Err(e) => {
+                    println!("Invalid chunk name, skipped: {e}");
+                    continue;
+                }
+            };
+
+            let file_size = fs::metadata(&file_path)?.len();
+            all_chunks.push(ChunkSelection {
+                chunk_name,
+                file_size,
+                full_path: file_path,
+            });
+        }
+
+        Ok(())
     }
 
     fn process_chunk(
@@ -242,51 +327,15 @@ I'm sure I've checked the list, press Enter to continue"#,
             bail!("game directory not exists.");
         }
 
-        // scan for pak files
-        let dir = fs::read_dir(game_dir)?;
-        let mut all_chunks: Vec<ChunkName> = vec![];
-        for entry in dir {
-            let entry = entry?;
-            if !entry.file_type()?.is_file() {
-                continue;
-            }
-
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            if !file_name.ends_with(".pak") || !file_name.starts_with("re_chunk_") {
-                continue;
-            }
-
-            let chunk_name = match ChunkName::try_from_str(&file_name) {
-                Ok(chunk_name) => chunk_name,
-                Err(e) => {
-                    println!("Invalid chunk name, skipped: {e}");
-                    continue;
-                }
-            };
-            all_chunks.push(chunk_name);
-        }
-        all_chunks.sort();
+        // scan for pak files in main game directory and DLC directory
+        let all_chunk_selections = self.scan_all_pak_files(game_dir)?;
 
         // show chunks for selection
         // only show sub chunks
-        let chunk_selections = all_chunks
+        let chunk_selections: Vec<&ChunkSelection> = all_chunk_selections
             .iter()
-            .filter_map(|chunk| {
-                if chunk.sub_id().is_some() {
-                    Some(chunk.to_string())
-                } else {
-                    None
-                }
-            })
-            .map(|file_name| {
-                let file_path = game_dir.join(&file_name);
-                let file_size = fs::metadata(file_path)?.len();
-                Ok(ChunkSelection {
-                    chunk_name: ChunkName::try_from_str(&file_name)?,
-                    file_size,
-                })
-            })
-            .collect::<color_eyre::Result<Vec<_>>>()?;
+            .filter(|chunk_selection| chunk_selection.chunk_name.sub_id().is_some())
+            .collect();
         if chunk_selections.is_empty() {
             bail!("No available pak files found.");
         }
@@ -294,9 +343,9 @@ I'm sure I've checked the list, press Enter to continue"#,
         let selected_chunks: Vec<bool> = chunk_selections
             .iter()
             .map(|chunk_selection| {
-                Ok(chunk_selection.file_size >= AUTO_CHUNK_SELECTION_SIZE_THRESHOLD as u64)
+                chunk_selection.file_size >= AUTO_CHUNK_SELECTION_SIZE_THRESHOLD as u64
             })
-            .collect::<color_eyre::Result<Vec<_>>>()?;
+            .collect();
 
         let selected_chunks: Option<Vec<usize>> =
             MultiSelect::with_theme(&ColorfulTheme::default())
@@ -308,10 +357,10 @@ I'm sure I've checked the list, press Enter to continue"#,
             bail!("No chunks selected.");
         };
 
-        let selected_chunks = selected_chunks
+        let selected_chunk_selections: Vec<&ChunkSelection> = selected_chunks
             .iter()
-            .map(|i| chunk_selections[*i].chunk_name.clone())
-            .collect::<Vec<_>>();
+            .map(|i| chunk_selections[*i])
+            .collect();
 
         // replace mode: replace original files with uncompressed files
         // patch mode: generate patch files after original patch files
@@ -325,16 +374,24 @@ I'm sure I've checked the list, press Enter to continue"#,
             .unwrap();
         let use_replace_mode = use_replace_mode == 1;
 
+        // all chunk names for patch ID tracking
+        let mut all_chunk_names: Vec<ChunkName> = all_chunk_selections
+            .iter()
+            .map(|cs| cs.chunk_name.clone())
+            .collect();
+
         // start processing
-        for chunk_name in selected_chunks {
-            let chunk_path = game_dir.join(chunk_name.to_string());
+        for chunk_selection in selected_chunk_selections {
+            let chunk_path = &chunk_selection.full_path;
+            let chunk_name = &chunk_selection.chunk_name;
+
             let output_path = if use_replace_mode {
                 // In replace mode, first generate a temporary decompressed file
                 chunk_path.with_extension("pak.temp")
             } else {
                 // In patch mode
                 // Find the max patch id for the current chunk series
-                let max_patch_id = all_chunks
+                let max_patch_id = all_chunk_names
                     .iter()
                     .filter(|c| {
                         c.major_id() == chunk_name.major_id()
@@ -351,15 +408,17 @@ I'm sure I've checked the list, press Enter to continue"#,
                 let output_chunk_name = chunk_name.with_sub_patch(new_patch_id);
 
                 // Add the new patch to the chunk list so it can be found in subsequent processing
-                all_chunks.push(output_chunk_name.clone());
+                all_chunk_names.push(output_chunk_name.clone());
 
-                game_dir.join(output_chunk_name.to_string())
+                // Determine output directory based on original chunk location
+                let output_dir = chunk_path.parent().unwrap();
+                output_dir.join(output_chunk_name.to_string())
             };
 
             println!("Output patch file: {}", output_path.display());
             self.process_chunk(
                 self.filename_table(),
-                &chunk_path,
+                chunk_path,
                 &output_path,
                 use_replace_mode,
                 true,
@@ -373,9 +432,9 @@ I'm sure I've checked the list, press Enter to continue"#,
                 if backup_path.exists() {
                     fs::remove_file(&backup_path)?;
                 }
-                fs::rename(&chunk_path, &backup_path)?;
+                fs::rename(chunk_path, &backup_path)?;
                 // Rename the temporary file to the original file name
-                fs::rename(&output_path, &chunk_path)?;
+                fs::rename(&output_path, chunk_path)?;
             }
             println!();
         }
@@ -446,40 +505,27 @@ I'm sure I've checked the list, press Enter to continue"#,
 
         // scan all pak files, find files generated by this tool
         println!("Scanning tool generated files...");
-        let dir = fs::read_dir(game_dir)?;
         let mut tool_generated_files = Vec::new();
         let mut backup_files = Vec::new();
         let mut all_chunks = Vec::new();
 
-        for entry in dir {
-            let entry = entry?;
-            if !entry.file_type()?.is_file() {
-                continue;
-            }
+        // Scan main directory
+        self.scan_tool_files_in_directory(
+            game_dir,
+            &mut tool_generated_files,
+            &mut backup_files,
+            &mut all_chunks,
+        )?;
 
-            let file_name = entry.file_name().to_string_lossy().to_string();
-            let file_path = entry.path();
-
-            // check backup files
-            if file_name.ends_with(".pak.backup") {
-                backup_files.push(file_path);
-                continue;
-            }
-
-            // check pak files
-            if !file_name.ends_with(".pak") || !file_name.starts_with("re_chunk_") {
-                continue;
-            }
-
-            // collect chunk info
-            if let Ok(chunk_name) = ChunkName::try_from_str(&file_name) {
-                all_chunks.push(chunk_name.clone());
-            }
-
-            // check if the file is generated by this tool
-            if let Ok(Some(metadata)) = self.check_tool_generated_file(&file_path) {
-                tool_generated_files.push((file_path, metadata));
-            }
+        // Scan DLC directory if exists
+        let dlc_dir = game_dir.join("dlc");
+        if dlc_dir.is_dir() {
+            self.scan_tool_files_in_directory(
+                &dlc_dir,
+                &mut tool_generated_files,
+                &mut backup_files,
+                &mut all_chunks,
+            )?;
         }
 
         if tool_generated_files.is_empty() && backup_files.is_empty() {
@@ -557,6 +603,56 @@ I'm sure I've checked the list, press Enter to continue"#,
         }
 
         println!("Restore completed!");
+        Ok(())
+    }
+
+    /// Scan tool generated files in a specific directory
+    fn scan_tool_files_in_directory(
+        &self,
+        dir: &Path,
+        tool_generated_files: &mut Vec<(std::path::PathBuf, PakMetadata)>,
+        backup_files: &mut Vec<std::path::PathBuf>,
+        all_chunks: &mut Vec<ChunkName>,
+    ) -> color_eyre::Result<()> {
+        let entries = fs::read_dir(dir)?;
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let file_path = entry.path();
+
+            // check backup files
+            if file_name.ends_with(".pak.backup") {
+                backup_files.push(file_path);
+                continue;
+            }
+
+            // check pak files
+            if !file_name.ends_with(".pak") {
+                continue;
+            }
+
+            // Check if it's a chunk or DLC file
+            let is_chunk = file_name.starts_with("re_chunk_");
+            let is_dlc = file_name.starts_with("re_dlc_");
+
+            if !is_chunk && !is_dlc {
+                continue;
+            }
+
+            // collect chunk info
+            if let Ok(chunk_name) = ChunkName::try_from_str(&file_name) {
+                all_chunks.push(chunk_name.clone());
+            }
+
+            // check if the file is generated by this tool
+            if let Ok(Some(metadata)) = self.check_tool_generated_file(&file_path) {
+                tool_generated_files.push((file_path, metadata));
+            }
+        }
         Ok(())
     }
 

@@ -30,6 +30,7 @@ pub struct ChunkName {
 }
 
 impl ChunkName {
+    #[allow(dead_code)]
     /// Create a new base chunk name (re_chunk_XXX.pak)
     pub fn new(major_id: u32) -> Self {
         Self {
@@ -120,21 +121,6 @@ impl ChunkName {
             ChunkComponent::SubPatch(id) => Some(*id),
             _ => None,
         })
-    }
-
-    /// Get the DLC ID
-    pub fn dlc_id(&self) -> Option<&str> {
-        self.components.iter().find_map(|c| match c {
-            ChunkComponent::Dlc(id) => Some(id.as_str()),
-            _ => None,
-        })
-    }
-
-    /// Check if this is a DLC chunk
-    pub fn is_dlc(&self) -> bool {
-        self.components
-            .iter()
-            .any(|c| matches!(c, ChunkComponent::Dlc(_)))
     }
 
     /// Add a sub patch component with the given ID
@@ -288,8 +274,6 @@ mod tests {
         assert_eq!(base.patch_id(), None);
         assert_eq!(base.sub_id(), None);
         assert_eq!(base.sub_patch_id(), None);
-        assert_eq!(base.dlc_id(), None);
-        assert!(!base.is_dlc());
 
         // Test complex chunk helper methods
         let complex =
@@ -298,14 +282,10 @@ mod tests {
         assert_eq!(complex.patch_id(), None);
         assert_eq!(complex.sub_id(), Some(789));
         assert_eq!(complex.sub_patch_id(), Some(12));
-        assert_eq!(complex.dlc_id(), None);
-        assert!(!complex.is_dlc());
 
         // Test DLC chunk helper methods
         let dlc = ChunkName::try_from_str("re_dlc_stm_3308900.pak").unwrap();
         assert_eq!(dlc.major_id(), None);
-        assert_eq!(dlc.dlc_id(), Some("stm_3308900"));
-        assert!(dlc.is_dlc());
     }
 
     #[test]
