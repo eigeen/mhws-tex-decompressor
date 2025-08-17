@@ -405,7 +405,7 @@ I'm sure I've checked the list, press Enter to continue"#,
                 let new_patch_id = max_patch_id + 1;
 
                 // Create a new chunk name
-                let output_chunk_name = chunk_name.with_sub_patch(new_patch_id);
+                let output_chunk_name = chunk_name.set_sub_patch(new_patch_id);
 
                 // Add the new patch to the chunk list so it can be found in subsequent processing
                 all_chunk_names.push(output_chunk_name.clone());

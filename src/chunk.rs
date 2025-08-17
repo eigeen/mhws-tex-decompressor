@@ -123,10 +123,20 @@ impl ChunkName {
         })
     }
 
-    /// Add a sub patch component with the given ID
-    pub fn with_sub_patch(&self, patch_id: u32) -> Self {
+    /// Add or replace a sub patch component with the given ID
+    pub fn set_sub_patch(&self, patch_id: u32) -> Self {
         let mut new_components = self.components.clone();
-        new_components.push(ChunkComponent::SubPatch(patch_id));
+
+        // Check if SubPatch already exists and replace it
+        if let Some(pos) = new_components
+            .iter()
+            .position(|c| matches!(c, ChunkComponent::SubPatch(_)))
+        {
+            new_components[pos] = ChunkComponent::SubPatch(patch_id);
+        } else {
+            new_components.push(ChunkComponent::SubPatch(patch_id));
+        }
+
         Self {
             components: new_components,
         }
@@ -289,9 +299,9 @@ mod tests {
     }
 
     #[test]
-    fn test_with_sub_patch() {
+    fn test_set_sub_patch() {
         let base = ChunkName::try_from_str("re_chunk_000.pak.sub_001.pak").unwrap();
-        let with_patch = base.with_sub_patch(99);
+        let with_patch = base.set_sub_patch(99);
 
         assert_eq!(with_patch.major_id(), Some(0));
         assert_eq!(with_patch.sub_id(), Some(1));
