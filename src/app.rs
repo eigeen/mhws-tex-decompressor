@@ -24,7 +24,6 @@ use ree_pak_core::{
 
 use crate::{chunk::ChunkName, metadata::PakMetadata, util::human_bytes};
 
-const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
 const AUTO_CHUNK_SELECTION_SIZE_THRESHOLD: usize = 50 * 1024 * 1024; // 50MB
 const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
 
@@ -72,8 +71,6 @@ impl App {
         println!();
 
         println!("Loading embedded file name table...");
-        let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
-        self.filename_table = Some(filename_table);
 
         // Mode selection
         let mode = Select::with_theme(&ColorfulTheme::default())
