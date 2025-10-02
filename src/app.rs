@@ -18,10 +18,8 @@ use parking_lot::Mutex;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use re_tex::tex::Tex;
 use ree_pak_core::{
-    filename::{FileNameExt, FileNameTable},
-    pak::PakEntry,
-    read::archive::PakArchiveReader,
-    write::FileOptions,
+    filename::FileNameTable, pak::PakEntry, read::archive::PakArchiveReader,
+    utf16_hash::Utf16HashExt, write::FileOptions,
 };
 
 use crate::{chunk::ChunkName, metadata::PakMetadata, util::human_bytes};
@@ -80,7 +78,7 @@ impl App {
         // Mode selection
         let mode = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Select mode")
-            .items(&["Automatic", "Manual", "Restore"])
+            .items(["Automatic", "Manual", "Restore"])
             .default(0)
             .interact()?;
         let mode = Mode::from_index(mode)?;
@@ -277,7 +275,7 @@ impl App {
                 }
 
                 bar.inc(1);
-                if bar.position() % 100 == 0 {
+                if bar.position().is_multiple_of(100) {
                     bar.set_message(
                         HumanBytes(bytes_written.load(Ordering::SeqCst) as u64).to_string(),
                     );
@@ -369,7 +367,7 @@ I'm sure I've checked the list, press Enter to continue"#,
                 "Replace original files with uncompressed files? (Will automatically backup original files)",
             )
             .default(0)
-            .items(&FALSE_TRUE_SELECTION)
+            .items(FALSE_TRUE_SELECTION)
             .interact()
             .unwrap();
         let use_replace_mode = use_replace_mode == 1;
@@ -462,7 +460,7 @@ I'm sure I've checked the list, press Enter to continue"#,
                 "Package all files, including non-tex files (for replacing original files)",
             )
             .default(0)
-            .items(&FALSE_TRUE_SELECTION)
+            .items(FALSE_TRUE_SELECTION)
             .interact()
             .unwrap();
         let use_full_package_mode = use_full_package_mode == 1;
@@ -470,7 +468,7 @@ I'm sure I've checked the list, press Enter to continue"#,
         let use_feature_clone = Select::with_theme(&ColorfulTheme::default())
             .with_prompt("Clone feature flags from original file?")
             .default(1)
-            .items(&FALSE_TRUE_SELECTION)
+            .items(FALSE_TRUE_SELECTION)
             .interact()
             .unwrap();
         let use_feature_clone = use_feature_clone == 1;
@@ -698,13 +696,13 @@ fn is_tex_file(hash: u64, file_name_table: &FileNameTable) -> bool {
     let Some(file_name) = file_name_table.get_file_name(hash) else {
         return false;
     };
-    file_name.get_name().ends_with(".tex.241106027")
+    file_name.to_string().unwrap().ends_with(".tex.241106027")
 }
 
 fn write_to_pak<W>(
     writer: &mut ree_pak_core::write::PakWriter<W>,
     entry: &PakEntry,
-    file_name: impl FileNameExt,
+    file_name: impl Utf16HashExt,
     data: &[u8],
     use_feature_clone: bool,
 ) -> color_eyre::Result<usize>

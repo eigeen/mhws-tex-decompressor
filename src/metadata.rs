@@ -3,9 +3,9 @@
 use std::io::{self, Read, Write};
 
 use ree_pak_core::{
-    filename::{FileNameExt, FileNameFull},
     pak::PakArchive,
     read::archive::PakArchiveReader,
+    utf16_hash::Utf16HashExt,
     write::{FileOptions, PakWriter},
 };
 use serde::{Deserialize, Serialize};
@@ -37,11 +37,10 @@ impl PakMetadata {
     where
         R: io::Read + io::Seek,
     {
-        let key_name = FileNameFull::new(METADATA_KEY);
         let entry = pak_archive
             .entries()
             .iter()
-            .find(|entry| entry.hash() == key_name.hash_mixed());
+            .find(|entry| entry.hash() == METADATA_KEY.hash_mixed());
 
         if let Some(entry) = entry {
             // read file
