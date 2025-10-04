@@ -14,6 +14,7 @@ use color_eyre::eyre::bail;
 use dialoguer::{Input, MultiSelect, Select, theme::ColorfulTheme};
 use fs::OpenOptions;
 use indicatif::{HumanBytes, ProgressBar, ProgressStyle};
+use iocraft::prelude::*;
 use parking_lot::Mutex;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use re_tex::tex::Tex;
@@ -22,8 +23,9 @@ use ree_pak_core::{
     utf16_hash::Utf16HashExt, write::FileOptions,
 };
 
-use crate::{chunk::ChunkName, metadata::PakMetadata, util::human_bytes};
+use crate::{chunk::ChunkName, component::UpdateCheck, metadata::PakMetadata, util::human_bytes};
 
+const FILE_NAME_LIST: &[u8] = include_bytes!("../assets/MHWs_STM_Release.list.zst");
 const AUTO_CHUNK_SELECTION_SIZE_THRESHOLD: usize = 50 * 1024 * 1024; // 50MB
 const FALSE_TRUE_SELECTION: [&str; 2] = ["False", "True"];
 
@@ -65,12 +67,45 @@ pub struct App {
 }
 
 impl App {
-    pub fn run(&mut self) -> color_eyre::Result<()> {
-        println!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION"));
-        println!("Get updates from https://github.com/eigeen/mhws-tex-decompressor");
+    pub async fn run(&mut self) -> color_eyre::Result<()> {
+        // Welcome message
+        element! {
+            View(
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                padding: Padding::Length(1),
+                border_style: BorderStyle::Round,
+                border_color: Color::Cyan,
+            ) {
+                Text(
+                    content: "Monster Hunter: Wilds - Texture Decompressor",
+                    color: Color::Green,
+                    weight: Weight::Bold,
+                    align: TextAlign::Center,
+                )
+                Text()
+                Text(content: format!("Version v{} - Tool by @Eigeen", env!("CARGO_PKG_VERSION")))
+                Text(content: "Repo: https://github.com/eigeen/mhws-tex-decompressor")
+            }
+        }
+        .print();
         println!();
 
-        println!("Loading embedded file name table...");
+        // Check update (blocking)
+        element! {
+            UpdateCheck()
+        }
+        .render_loop()
+        .await?;
+
+        element! {
+            Text(content: "Loading embedded file path list...")
+        }
+        .print();
+
+        // println!("Loading embedded file path list...");
+        let filename_table = FileNameTable::from_bytes(FILE_NAME_LIST)?;
+        self.filename_table = Some(filename_table);
 
         // Mode selection
         let mode = Select::with_theme(&ColorfulTheme::default())

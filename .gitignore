@@ -1,3 +1,7 @@
 /target
 *.exe
 *.zip
+
+.serena/
+.codex/
+.claude/

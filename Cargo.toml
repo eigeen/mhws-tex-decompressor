@@ -22,5 +22,14 @@ parking_lot = "0.12"
 fs-err = "3.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.47", features = ["parking_lot", "rt-multi-thread", "macros"] }
+tokio = { version = "1.47", features = [
+    "parking_lot",
+    "rt-multi-thread",
+    "macros",
+] }
+iocraft = "0.7"
 reqwest = { version = "0.12", features = ["json"] }
+semver = "1.0"
+self-replace = "1.5"
+tempfile = "3.23"
+zip = { version = "5.1", default-features = false, features = ["deflate"] }
