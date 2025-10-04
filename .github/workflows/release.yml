@@ -29,21 +29,23 @@ jobs:
 
       - name: Prepare release package
         run: |
-          mkdir release
-          copy target/release/${{ env.BINARY_NAME }}.exe release/
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $destination = "release/${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip"
+          Compress-Archive -Path "target/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $destination -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BINARY_NAME }}-windows-x64
-          path: release/
+          name: ${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc
+          path: release/${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: github.ref_type == 'tag'
         with:
           draft: true
-          files: release/*
+          generate_release_notes: true
+          files: release/${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip
           name: Release ${{ github.ref_name }}
           body: |
             ## ${{ github.ref_name }}
