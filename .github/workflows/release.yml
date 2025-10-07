@@ -13,8 +13,44 @@ env:
   BINARY_NAME: mhws-tex-decompressor
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract crate version
+        id: version
+        run: |
+          VERSION=$(sed -n 's/^version\s*=\s*"\(.*\)"/\1/p' Cargo.toml | head -n1)
+          if [ -z "$VERSION" ]; then
+            echo "Failed to determine version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
   build:
-    runs-on: windows-latest
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_extension: zip
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_extension: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact_extension: tar.gz
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      CARGO_TERM_COLOR: always
+      BINARY_NAME: mhws-tex-decompressor
 
     steps:
       - uses: actions/checkout@v4
@@ -22,31 +58,54 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
 
       - name: Build
         run: cargo build --verbose --release
 
-      - name: Prepare release package
+      - name: Prepare release package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          $destination = "release/${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip"
-          Compress-Archive -Path "target/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $destination -Force
+          $archive = "release/${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}.zip"
+          Compress-Archive -Path "target/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $archive -Force
+
+      - name: Prepare release package (Unix)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          tar czf "release/${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}.tar.gz" -C target/release ${{ env.BINARY_NAME }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc
-          path: release/${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip
+          name: ${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}
+          path: release/${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}.${{ matrix.artifact_extension }}
+
+  release:
+    needs:
+      - prepare
+      - build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
-        if: github.ref_type == 'tag'
         with:
           draft: true
           generate_release_notes: true
-          files: release/${{ env.BINARY_NAME }}-x86_64-pc-windows-msvc.zip
-          name: Release ${{ github.ref_name }}
+          files: release/**/*
+          name: Release v${{ env.VERSION }}
           body: |
             ## ${{ github.ref_name }}
 
