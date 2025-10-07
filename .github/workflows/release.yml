@@ -39,13 +39,13 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_extension: zip
+            binary_suffix: .exe
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_extension: tar.gz
+            binary_suffix: ""
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact_extension: tar.gz
+            binary_suffix: ""
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       CARGO_TERM_COLOR: always
@@ -62,27 +62,12 @@ jobs:
       - name: Build
         run: cargo build --verbose --release
 
-      - name: Prepare release package (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          $archive = "release/${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}.zip"
-          Compress-Archive -Path "target/release/${{ env.BINARY_NAME }}.exe" -DestinationPath $archive -Force
-
-      - name: Prepare release package (Unix)
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release
-          tar czf "release/${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}.tar.gz" -C target/release ${{ env.BINARY_NAME }}
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}
-          path: release/${{ env.BINARY_NAME }}-${{ env.VERSION }}-${{ matrix.target }}.${{ matrix.artifact_extension }}
+          path: target/release/${{ env.BINARY_NAME }}${{ matrix.binary_suffix }}
+          if-no-files-found: error
 
   release:
     needs:
